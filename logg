@@ -1,0 +1,88 @@
+#!/bin/bash
+# logg – enkel arbetslogg. En rad per post i "~/Projekt 2026/logg/logg.md"
+#
+#   logg add [-p projekt] text...     lägg till post (text kan även komma via stdin)
+#   logg visa [idag|igår|vecka|månad|alla|N] [-p projekt]
+#                                     visa poster (standard: vecka). N = antal senaste poster
+#   logg fil                          skriv ut sökvägen till loggfilen
+#   logg                              samma som "logg visa"
+
+set -e
+
+LOGG_FIL="${LOGG_FIL:-$HOME/Projekt 2026/logg/logg.md}"
+mkdir -p "$(dirname "$LOGG_FIL")"
+[ -f "$LOGG_FIL" ] || printf '# Logg\n\n' > "$LOGG_FIL"
+
+projekt_namn() {
+  local root
+  root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  basename "$root"
+}
+
+cmd_add() {
+  local projekt="" text
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -p|--projekt) [ -n "${2:-}" ] || { echo "logg: -p kräver ett projektnamn" >&2; exit 1; }; projekt="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  [ -n "$projekt" ] || projekt=$(projekt_namn)
+  if [ $# -gt 0 ]; then
+    text="$*"
+  else
+    text=$(cat)
+  fi
+  # Platta ut till en rad, trimma
+  text=$(printf '%s' "$text" | tr '\n' ' ' | sed -e 's/  */ /g' -e 's/^ *//' -e 's/ *$//')
+  if [ -z "$text" ]; then
+    echo "logg: ingen text att logga" >&2
+    exit 1
+  fi
+  local rad
+  rad="- $(date '+%Y-%m-%d %H:%M') [$projekt] $text"
+  printf '%s\n' "$rad" >> "$LOGG_FIL"
+  echo "$rad"
+}
+
+cmd_visa() {
+  local period="vecka" projekt="" antal=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -p|--projekt) [ -n "${2:-}" ] || { echo "logg: -p kräver ett projektnamn" >&2; exit 1; }; projekt="$2"; shift 2 ;;
+      idag|igår|igar|vecka|månad|manad|alla) period="$1"; shift ;;
+      ''|*[!0-9]*) echo "logg: okänt argument '$1'" >&2; exit 1 ;;
+      *) antal="$1"; shift ;;
+    esac
+  done
+
+  local fran=""
+  case "$period" in
+    idag)          fran=$(date '+%Y-%m-%d') ;;
+    igår|igar)     fran=$(date -v-1d '+%Y-%m-%d') ;;
+    vecka)         fran=$(date -v-7d '+%Y-%m-%d') ;;
+    månad|manad)   fran=$(date -v-30d '+%Y-%m-%d') ;;
+    alla)          fran="0000-00-00" ;;
+  esac
+
+  grep '^- [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\} ' "$LOGG_FIL" \
+    | { if [ -n "$antal" ]; then tail -n "$antal"; else awk -v fran="$fran" '{ if (substr($2,1,10) >= fran) print }'; fi; } \
+    | { if [ -n "$projekt" ]; then grep -F -- "[$projekt]"; else cat; fi; } \
+    | awk '
+        {
+          dag = substr($2,1,10); tid = substr($3,1,5)
+          if (dag != senaste) { if (senaste != "") print ""; print dag; senaste = dag }
+          rest = $0; sub(/^- [^ ]+ [^ ]+ /, "", rest)
+          print "  " tid " " rest
+        }
+        END { if (senaste == "") print "(inga poster)" }
+      '
+}
+
+case "${1:-visa}" in
+  add|lägg|logga) shift || true; cmd_add "$@" ;;
+  visa|show|ls)   shift || true; cmd_visa "$@" ;;
+  fil|path)       echo "$LOGG_FIL" ;;
+  -h|--help|help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)              cmd_visa "$@" ;;
+esac
