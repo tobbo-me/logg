@@ -5,6 +5,7 @@
 #   logg visa [idag|igår|vecka|månad|alla|N] [-p projekt]
 #                                     visa poster (standard: vecka). N = antal senaste poster
 #   logg fil                          skriv ut sökvägen till loggfilen
+#   Varje add committas i git (LOGG_GIT=0 stänger av) och pushas tyst (LOGG_PUSH=0 stänger av)
 #   logg                              samma som "logg visa"
 
 set -e
@@ -43,6 +44,23 @@ cmd_add() {
   rad="- $(date '+%Y-%m-%d %H:%M') [$projekt] $text"
   printf '%s\n' "$rad" >> "$LOGG_FIL"
   echo "$rad"
+  committa "$projekt" "$text"
+}
+
+# Committa loggfilen om den ligger i ett git-repo. Sätt LOGG_GIT=0 för att stänga av,
+# LOGG_PUSH=0 för att committa utan att pusha.
+committa() {
+  [ "${LOGG_GIT:-1}" = "1" ] || return 0
+  local repo
+  repo=$(git -C "$(dirname "$LOGG_FIL")" rev-parse --show-toplevel 2>/dev/null) || return 0
+  local msg="logg: [$1] $2"
+  [ ${#msg} -le 72 ] || msg="${msg:0:69}..."
+  git -C "$repo" add -- "$LOGG_FIL" \
+    && git -C "$repo" commit -q -m "$msg" -- "$LOGG_FIL" \
+    || { echo "logg: kunde inte committa (posten är sparad)" >&2; return 0; }
+  if [ "${LOGG_PUSH:-1}" = "1" ]; then
+    ( git -C "$repo" push -q >/dev/null 2>&1 & )
+  fi
 }
 
 cmd_visa() {
@@ -83,6 +101,6 @@ case "${1:-visa}" in
   add|lägg|logga) shift || true; cmd_add "$@" ;;
   visa|show|ls)   shift || true; cmd_visa "$@" ;;
   fil|path)       echo "$LOGG_FIL" ;;
-  -h|--help|help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)              cmd_visa "$@" ;;
 esac

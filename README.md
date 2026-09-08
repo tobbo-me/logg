@@ -17,6 +17,8 @@ Enkel arbetslogg som nås från alla Claude Code-trådar och från terminalen.
 
 Samma sak i terminalen: `logg add "text"`, `logg visa idag`, `logg fil`.
 
+Varje `logg add` committar loggfilen och pushar tyst i bakgrunden. `LOGG_GIT=0` stänger av git helt, `LOGG_PUSH=0` committar utan push.
+
 ## Idéer som inte är byggda
 
 - Hook som loggar automatiskt när en session avslutas.
